@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>계정 경로 설정</title>
+  <style>
+        body { font-family: sans-serif; padding: 20px; }
+    h3 { margin-bottom: 10px; }
+    .subtext {
+      font-size: 14px;
+      margin-bottom: 10px;
+      display: block;
+    }
+    .profile-entry {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .profile-entry input[type="text"] {
+      flex: 1;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #aaa;
+    }
+    .remove-btn {
+      padding: 5px 10px;
+      border-radius: 4px;
+      border: none;
+      background-color: #ffffff;
+      color: rgb(175, 0, 0);
+      cursor: pointer;
+    }
+    .action-buttons {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 10px;
+      margin-top: 15px;
+    }
+    .add-btn {
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: none;
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+      font-size: 18px;
+    }
+    .save-btn {
+      padding: 6px 14px;
+
+      border-radius: 4px;
+      border: none;
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+
+  </style>
+</head>
+<body>
+  <h3>계정 경로 수정</h3>
+  <span class="subtext">- 크롬창 chrome://version/ 검색, [프로필 경로] 확인 </span>
+  <span class="subtext">- 공백은 비허용, 삭제 요망</span>
+  <div id="profile-list"></div>
+
+  <div class="action-buttons">
+    <button class="add-btn" onclick="addProfile()">+</button>
+    <button class="save-btn" onclick="saveProfiles()">저장하기</button>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    async function loadProfiles() {
+      const settings = await ipcRenderer.invoke('get-settings');
+      const container = document.getElementById('profile-list');
+      container.innerHTML = '';
+
+      settings.profiles.forEach((profile, i) => {
+        const entry = document.createElement('div');
+        entry.className = 'profile-entry';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = profile;
+        input.dataset.index = i;
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-btn';
+        removeBtn.innerText = '✖';
+        removeBtn.onclick = () => {
+          settings.profiles.splice(i, 1);
+          ipcRenderer.invoke('save-settings', settings).then(loadProfiles);
+        };
+
+        entry.appendChild(input);
+        entry.appendChild(removeBtn);
+        container.appendChild(entry);
+      });
+    }
+
+    function addProfile() {
+      const container = document.getElementById('profile-list');
+
+      const entry = document.createElement('div');
+      entry.className = 'profile-entry';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = '';
+      input.dataset.index = container.children.length;
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-btn';
+      removeBtn.innerText = '✖';
+      removeBtn.onclick = () => {
+        entry.remove();
+      };
+
+      entry.appendChild(input);
+      entry.appendChild(removeBtn);
+      container.appendChild(entry);
+    }
+
+    async function saveProfiles() {
+      const inputs = document.querySelectorAll('#profile-list input');
+      const profiles = Array.from(inputs).map(input => input.value.trim());
+      const settings = await ipcRenderer.invoke('get-settings');
+      settings.profiles = profiles;
+
+      const result = await ipcRenderer.invoke('save-settings', settings);
+      if (result.success) {
+        alert('✅ 저장되었습니다');
+      } else {
+        alert('❌ 저장 실패: ' + result.error);
+      }
+    }
+
+    loadProfiles();
+  </script>
+</body>
+</html>

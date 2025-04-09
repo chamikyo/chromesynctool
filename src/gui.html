@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chrome Sync Tool</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 500px; margin: auto; }
+    input, button, select {
+      padding: 10px;
+      margin: 10px 0;
+      width: 100%;
+      border-radius: 6px;
+      border: 1px solid #b4b4b4;
+      box-sizing: border-box;
+    }
+    label { font-weight: bold; }
+    .primary { background-color: #007bff; color: white; border: none; }
+    .disabled { background-color: #ccc; color: #666; cursor: not-allowed; }
+    .loading:after {
+      content: " ⏳";
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+
+    }
+    .account-list-button {
+      padding: 0; margin: 0; text-align: right; 
+      font-size: 0.8em;
+      font-weight: 300;
+      color: #007bff;
+      border: none;
+      background: none;
+      cursor: pointer;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+    <h2>Chrome Sync Tool</h2>
+    <button class="account-list-button" onclick="openProfileList()">[계정 리스트]</button>
+  <div style="display: flex; align-items: center; gap: 10px;">
+    <label for="count" style="white-space: nowrap;">브라우저 개수 (2~20):</label>
+    <input id="count" type="number" min="2" max="20" value="2" style="flex: 1;">
+  </div>
+
+  <button id="launch-btn" class="primary" onclick="launchChromes()">1. 크롬창 열기</button>
+
+  <div id="master-guidance" style="display:none; text-align: center; margin-top: 10px;">
+    <p style="font-size: 0.8em; font-weight: 400;">페이지 개별 세팅을 마친 후 마스터 창 선택</p>
+  </div>
+
+  <button id="master-btn" class="disabled" disabled onclick="selectMaster()">2. 마스터 창 선택</button>
+
+  <div id="master-select-box" style="display:none;">
+    <div style="text-align: left;">
+      <label for="master">마스터 창 선택:</label>
+      <select id="master"></select>
+      <button onclick="confirmMaster()">선택 완료</button>
+    </div>
+  </div>
+
+  <button id="sync-btn" class="disabled" disabled onclick="startSync()">3. 동기화 시작하기</button>
+  <button id="stop-sync-btn" class="disabled" disabled onclick="stopSync()">동기화 종료하기</button>
+  <button onclick="exitApp()">4. 종료</button>
+  <button style="padding: 0; margin: 0; text-align: right; font-size: 0.8em; font-weight: 200; border: none; background-color: #ffffff;" onclick="closeAllChromes()"> 모든 크롬 창 닫기</button>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    let chromeList = [];
+    let selectedMasterIndex = null;
+
+    async function launchChromes() {
+      const count = parseInt(document.getElementById('count').value);
+      if (count < 2 || count > 20) return alert('2~20 사이 숫자를 입력하세요');
+      try {
+        const result = await ipcRenderer.invoke('launch-chromes', count);
+        if (result.success) {
+          alert(`${result.length}개의 크롬 창이 열렸습니다.`);
+
+          document.getElementById('launch-btn').classList.remove('primary');
+          document.getElementById('launch-btn').classList.add('disabled');
+          document.getElementById('launch-btn').disabled = true;
+
+          const masterBtn = document.getElementById('master-btn');
+          masterBtn.classList.remove('disabled');
+          masterBtn.classList.add('primary');
+          masterBtn.disabled = false;
+
+          document.getElementById('master-guidance').style.display = 'block';
+        } else {
+          console.error('❌ 크롬 실행 실패:', result.error);
+          alert('크롬 실행 중 오류 발생');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('크롬 실행 중 오류 발생');
+      }
+    }
+
+    async function selectMaster() {
+      const count = parseInt(document.getElementById('count').value);
+      const list = await ipcRenderer.invoke('get-browser-list', count);
+      chromeList = list;
+      const select = document.getElementById('master');
+      select.innerHTML = '';
+      list.forEach((b, i) => {
+        const option = document.createElement('option');
+        option.value = i;
+        option.innerText = `Port ${b.port} | ${b.title} (${b.url})`;
+        select.appendChild(option);
+      });
+      document.getElementById('master-select-box').style.display = 'block';
+    }
+
+    async function confirmMaster() {
+      const index = parseInt(document.getElementById('master').value);
+      selectedMasterIndex = index;
+      await ipcRenderer.invoke('show-master-alert', selectedMasterIndex);
+      alert(`마스터로 Port ${chromeList[index].port} 선택됨`);
+
+      const masterBtn = document.getElementById('master-btn');
+      masterBtn.classList.remove('primary');
+      masterBtn.classList.add('disabled');
+      masterBtn.disabled = true;
+
+      const syncBtn = document.getElementById('sync-btn');
+      syncBtn.classList.remove('disabled');
+      syncBtn.classList.add('primary');
+      syncBtn.disabled = false;
+    }
+
+    async function startSync() {
+      const count = parseInt(document.getElementById('count').value);
+      if (selectedMasterIndex == null) return alert('마스터를 먼저 선택하세요.');
+      try {
+        await ipcRenderer.invoke('start-sync', selectedMasterIndex, count);
+        alert('✅ 동기화 시작됨!');
+
+        const syncBtn = document.getElementById('sync-btn');
+        syncBtn.classList.remove('primary');
+        syncBtn.classList.add('disabled', 'loading');
+        syncBtn.innerText = '동기화 중...';
+        syncBtn.disabled = true;
+
+        const stopBtn = document.getElementById('stop-sync-btn');
+        stopBtn.classList.remove('disabled');
+        stopBtn.classList.add('primary');
+        stopBtn.disabled = false;
+      } catch (err) {
+        console.error(err);
+        alert('❌ 동기화 시작 실패');
+      }
+    }
+
+    function stopSync() {
+      alert('🛑 동기화 종료');
+      const syncBtn = document.getElementById('sync-btn');
+      syncBtn.classList.remove('loading');
+      syncBtn.classList.remove('disabled');
+      syncBtn.classList.add('primary');
+      syncBtn.innerText = '3. 동기화 시작하기';
+      syncBtn.disabled = false;
+
+      const stopBtn = document.getElementById('stop-sync-btn');
+      stopBtn.classList.remove('primary');
+      stopBtn.classList.add('disabled');
+      stopBtn.disabled = true;
+    }
+
+    async function closeAllChromes() {
+      try {
+        const result = await ipcRenderer.invoke('close-all-chromes');
+        alert('❌ 모든 크롬 창이 닫혔습니다.');
+      } catch (err) {
+        console.error(err);
+        alert('❌ 크롬 창 닫기 실패');
+      }
+    }
+
+    function exitApp() {
+      window.close();
+    }
+
+    function openProfileList() {
+      ipcRenderer.invoke('open-profile-list');
+    }
+  </script>
+</body>
+</html>
